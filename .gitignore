@@ -1,0 +1,15 @@
+# Build directories
+build/
+
+# Cmake
+__cmake_systeminformation
+
+# Visual Studio
+.vs/
+.cache/
+
+# Clangd
+.clangd
+
+#vcpkg
+vcpkg/
