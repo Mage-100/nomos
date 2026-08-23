@@ -10,4 +10,6 @@ find_package(glm CONFIG REQUIRED)
 
 # enable_testing()
 
+set(_DATASET_DIR "${CMAKE_SOURCE_DIR}/datasets/")
+
 add_subdirectory(src)
