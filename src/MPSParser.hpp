@@ -93,6 +93,8 @@ public:
 	int getColumnCount() {
 		return _column_index;
 	}
+
+	std::vector<Entry>& getEntries() { return this->entries; }
 private:
 	int _column_index = 0;
 	int _row_index = 0;
