@@ -47,7 +47,7 @@ bool MPSParser::_isSection(std::string_view line)
 {
 	const std::string_view firstWord = _firstWord(line);
 
-	// Check whether the first word is a valid MPS section.
+	// Checking whether the first word is a valid MPS section.
 	return firstWord == "NAME" ||
 		firstWord == "ROWS" ||
 		firstWord == "COLUMNS" ||
