@@ -1,9 +1,10 @@
 #pragma once
 
-#include <utility>
-#include <unordered_map>
-#include <fstream>
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <functional>
+#include <filesystem>
 
 struct Value {
 private:
@@ -63,6 +64,24 @@ struct Entry {
 	Value value;
 };
 
+struct StringHash {
+	using is_transparent = void; // Enables heterogeneous lookup
+	using hash_type = std::hash<std::string_view>;
+
+	size_t operator()(std::string_view sv) const noexcept {
+		return hash_type{}(sv);
+	}
+};
+
+// Custom equality comparator for std::string and std::string_view
+struct StringEqual {
+	using is_transparent = void; // Enables heterogeneous lookup
+
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+		return lhs == rhs;
+	}
+};
+
 class MPSParser {
 public:
 	// This enum class defines the MPS syntax into chunks
@@ -76,44 +95,48 @@ public:
 		ENDATA = 6
 	};
 
-	enum class CONSTRAINT_TYPE: std::uint8_t {
+	enum class CONSTRAINT_TYPE : std::uint8_t {
 		EQUAL = 0,
 		LESS = 1,
 		GREATER = 2,
 		FREE = 3  // States the objective function
 	};
-
 public:
-	MPSParser(const std::string& filepath);
+	MPSParser(const std::filesystem::path& path);
 
 	int getRowCount() {
-		return _row_index;
+		return _rowIndex;
 	}
-
 	int getColumnCount() {
-		return _column_index;
+		return _columnIndex;
 	}
-
-	std::vector<Entry>& getEntries() { return this->entries; }
+	const std::vector<Entry>& getEntries() const& { return this->entries; }
 private:
-	int _column_index = 0;
-	int _row_index = 0;
+	std::string_view _firstWord(std::string_view line);
+	void _processLine(std::string_view line);
+	bool _hasColumn(std::string_view name);
+	bool _isSection(std::string_view line);
+	void _catchColumn(std::string_view line);
+	MPSDATA_LINE _getSection(std::string_view line);
+	std::pair<MPSParser::CONSTRAINT_TYPE, std::string> _catchConstraint(std::string_view line);
+
+
+private:
+	int _columnIndex = 0;
+	int _rowIndex = 0;
+	MPSDATA_LINE curr_section = MPSDATA_LINE::VOID;
+
 
 	// Stores a particular row against that row's constraint type
-	std::unordered_map<std::string, CONSTRAINT_TYPE > constraint_map;
+	std::unordered_map<std::string, CONSTRAINT_TYPE, StringHash, StringEqual> constraintMap;
 
 	// Stores the rows against their index staring from 0;
-	std::unordered_map<std::string, int> row_map;
+	std::unordered_map<std::string, int, StringHash, StringEqual> rowMap;
 
 	// Stores the columns against their index staring from 0;
-	std::unordered_map<std::string, int> column_map;
+	std::unordered_map<std::string, int, StringHash, StringEqual> columnMap;
 
 	std::vector<Entry> entries;
-
-	bool _isSection(const std::string& line);
-	MPSDATA_LINE _getSection(const std::string& line);
-	std::pair<CONSTRAINT_TYPE, std::string> _catchConstraint(const std::string& line);
-	void _catchColumn(const std::string& line);
-
-	bool _isColumn(const std::string& name);
 };
+
+

@@ -1,17 +1,15 @@
 #include <iostream>
 #include <filesystem>
 #include "MPSParser.hpp"
-
-using fs_path = std::filesystem::path;
-
+#include <print>
 int main() {
-    fs_path filepath = fs_path(DATASET_DIR) / "afiro.mps";
+    const auto filePath = std::filesystem::path(DATASET_DIR) / "afiro.mps";
 
-    MPSParser parser(filepath.string());
+    MPSParser parser(filePath);
     auto& entries = parser.getEntries();
 
-    std::printf("Column Count: %d\n", parser.getColumnCount());
-    std::printf("Row Count: %d\n", parser.getRowCount());
+    std::println("Column Count: {}", parser.getColumnCount());
+    std::println("Row Count: {}", parser.getRowCount());
 
     return 0;
 }

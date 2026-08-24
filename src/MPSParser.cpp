@@ -1,151 +1,214 @@
-
-#include <utility>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <string>
 #include <stdexcept>
 #include <array>
-#include <regex>
-
+#include <filesystem>
 #include "MPSParser.hpp"
+#include <string_view>
 
-MPSParser::MPSParser(const std::string& filepath) 
+MPSParser::MPSParser(const std::filesystem::path& path) 
 {
-	std::ifstream file(filepath);
+	std::ifstream file(path);
 	
+	// Checking if exists
 	if (!file.is_open()) {
-		throw std::runtime_error("Could not open file: " + filepath);
+		throw std::runtime_error("Could not open file: " + path.string());
 	}
 
-	std::string line;
-
-	MPSDATA_LINE curr_section = MPSDATA_LINE::VOID;
-	bool store = false;
-
-	while (std::getline(file, line)) {
-		if (_isSection(line)) {
-			curr_section = _getSection(line);
-			continue;
-		}
-
-		if (curr_section == MPSDATA_LINE::ROWS) {
-			auto row = _catchConstraint(line);
-			constraint_map.insert({ row.second, row.first });
-		}
-		else if (curr_section == MPSDATA_LINE::COLUMNS) {
-			_catchColumn(line);
-		}
-
-	}
-
+	// load full file content on to content
+	std::string content(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>{});
 	file.close();
+	
+	// create string viewing pointer 
+	std::string_view text = content;
+
+	while (!text.empty()) {
+		const auto newlinePosition = text.find('\n');
+
+		// terinary operations handling if end of file
+		std::string_view line = text.substr(0, newlinePosition == std::string_view::npos ? text.size() : newlinePosition);
+
+		// for Windows convert binarary -> str can add \r\n here so removing it 
+		if (!line.empty() && line.back() == '\r') {
+			line.remove_suffix(1);
+		}
+		_processLine(line);
+
+		if (newlinePosition == std::string_view::npos) {
+			break;
+		}
+		text.remove_prefix(newlinePosition + 1);
+	}
 }
 
-bool MPSParser::_isSection(const std::string& line) {
-	std::istringstream iss(line);
-	std::string firstWord;
+bool MPSParser::_isSection(std::string_view line)
+{
+	const std::string_view firstWord = _firstWord(line);
 
-	iss >> firstWord;
-
-	if (firstWord == "NAME" ||
-		firstWord == "ROWS" || 
+	// Check whether the first word is a valid MPS section.
+	return firstWord == "NAME" ||
+		firstWord == "ROWS" ||
 		firstWord == "COLUMNS" ||
 		firstWord == "RHS" ||
-		firstWord == "BOUNDS"||
-		firstWord == "ENDATA") {
-
-		return true;
-	}
-	else {
-		return false;
-	}
+		firstWord == "BOUNDS" ||
+		firstWord == "ENDATA";
 }
 
-MPSParser::MPSDATA_LINE MPSParser::_getSection(const std::string& line) {
-	using T = MPSParser::MPSDATA_LINE;
 
-	std::istringstream iss(line);
-	std::string firstWord;
+MPSParser::MPSDATA_LINE MPSParser::_getSection(std::string_view line) 
+{
+	using DataLine = MPSParser::MPSDATA_LINE;
 
-	iss >> firstWord;
+	const std::string_view sectionName = _firstWord(line);
 
-	if (firstWord == "NAME") {
-		return T::NAME;
+	// Returning the corresponding MPS Section
+	if (sectionName == "NAME") {
+		return DataLine::NAME;
 	}
-	else if (firstWord == "ROWS") {
-		return T::ROWS;
+	if (sectionName == "ROWS") {
+		return DataLine::ROWS;
 	}
-	else if (firstWord == "COLUMNS") {
-		return T::COLUMNS;
+	if (sectionName == "COLUMNS") {
+		return DataLine::COLUMNS;
 	}
-	else if (firstWord == "RHS") {
-		return T::RHS;
+	if (sectionName == "RHS") {
+		return DataLine::RHS;
 	}
-	else if (firstWord == "BOUNDS") {
-		return T::BOUNDS;
+	if (sectionName == "BOUNDS") {
+		return DataLine::BOUNDS;
 	}
-	else if (firstWord == "ENDATA") {
-		return T::ENDATA;
+	if (sectionName == "ENDATA") {
+		return DataLine::ENDATA;
 	}
+
+	// Invalid section
+	return DataLine::NAME;
 
 }
+
 
 std::pair<MPSParser::CONSTRAINT_TYPE, std::string>
-	MPSParser::_catchConstraint(const std::string& line)
+	MPSParser::_catchConstraint(std::string_view line)
 {
-	using constraint_type_t = MPSParser::CONSTRAINT_TYPE;
+	using ConstraintType = MPSParser::CONSTRAINT_TYPE;
 
-	std::istringstream iss(line);
-	std::string constraint_str;
+	std::istringstream inputStream{std::string(line)};
+
+	std::string constraintTypeString;
+	std::string rowName;
+
+	ConstraintType  constraintType = ConstraintType::FREE;
+
+	// Read the constraint type and row name from the line
+	inputStream >> constraintTypeString >> rowName;
+
+	// Converting the constraintTypeCode to corresponding enum values
+	if (!constraintTypeString.empty()) {
+
+		switch (constraintTypeString[0]) {
+		case 'E':
+			constraintType = ConstraintType::EQUAL;
+			break;
+		case 'L':
+			constraintType = ConstraintType::LESS;
+			break;
+		case 'G':
+			constraintType = ConstraintType::GREATER;
+			break;
+		case 'N':
+			constraintType = ConstraintType::FREE;
+			break;
+		}
+	}
+
+	// Stores the row name with incrementing the index value.
+	rowMap[rowName] = _rowIndex++;
+
+	return { constraintType, rowName };
+}
+
+// helper function that removes the whitespace from first word
+std::string_view MPSParser::_firstWord(std::string_view line)
+{
+	// Find the first character that is not a space or tab
+	const auto start = line.find_first_not_of(" \t");
+	
+	if (start == std::string_view::npos)
+		return {};
+
+	// Find the end of the first word
+	const auto end = line.find_first_of(" \t", start);
+
+	if (end == std::string_view::npos)
+		return line.substr(start);
+
+	return line.substr(start, end - start);
+}
+
+void MPSParser::_processLine(std::string_view line)
+{
+    const std::string_view first_word = _firstWord(line);
+
+    if (_isSection(line)) {
+        curr_section = _getSection(line);
+    }
+    else if (curr_section == MPSDATA_LINE::ROWS) {
+        auto row = _catchConstraint(line);
+        constraintMap.insert({ row.second, row.first });
+    }
+    else if (curr_section == MPSDATA_LINE::COLUMNS) {
+        _catchColumn(line);
+    }
+}
+
+
+bool MPSParser::_hasColumn(std::string_view name)
+{
+	return columnMap.find(std::string(name)) != columnMap.end();
+}
+
+
+void MPSParser::_catchColumn(std::string_view line)
+{
+	const std::string columnName = std::string(_firstWord(line));
+
+	if (columnName.empty()) {
+		return;
+	}
+
+	if (!_hasColumn(columnName)) {
+		columnMap[columnName] = _columnIndex++;
+	}
+
+	// Parse the rest of the line
+	auto pos = line.find_first_not_of(" \t");
+
+	if (pos == std::string_view::npos)
+		return;
+
+	// Skip the first word
+	pos = line.find_first_of(" \t", pos);
+
+	if (pos == std::string_view::npos)
+		return;
+
+	std::istringstream iss(std::string(line.substr(pos)));
+
 	std::string row_name;
+	std::string row_value;
 
-	constraint_type_t  _constraint_type = constraint_type_t::FREE;
-
-	iss >> constraint_str >> row_name;
-
-	if (constraint_str == "E")
-	{
-		_constraint_type = constraint_type_t::EQUAL;
-	}
-	else if (constraint_str == "L")
-	{
-		_constraint_type = constraint_type_t::LESS;
-	}
-	else if (constraint_str == "G")
-	{
-		_constraint_type = constraint_type_t::GREATER;
-	}
-	else if (constraint_str == "N")
-	{
-		_constraint_type = constraint_type_t::FREE;
-	}
-
-	row_map[row_name] = _row_index++;
-	return {_constraint_type, row_name};
-}
-
-bool MPSParser::_isColumn(const std::string& name) {
-	auto it = column_map.find(name);
-	if (it != column_map.end()) return true;
-	else return false;
-}
-
-void MPSParser::_catchColumn(const std::string& line) {
-	std::istringstream iss(line);
-
-	std::string column_name;
-
-	iss >> column_name;
-	if (!_isColumn(column_name)) {
-		column_map[column_name] = _column_index++;
-	}
-
-	std::string row_name, row_value;
 	while (iss >> row_name >> row_value) {
 		Value v = row_value;
-		entries.push_back({ row_map[row_name], column_map[column_name], v });
-	}
 
+		entries.push_back({
+			rowMap[row_name],
+			columnMap[columnName],
+			v
+			});
+	}
 }
+
+
 

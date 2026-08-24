@@ -1,7 +1,7 @@
 # Build directories
 build/
 
-# Cmake
+# CMake
 __cmake_systeminformation
 
 # Visual Studio
