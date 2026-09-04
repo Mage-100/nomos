@@ -3,66 +3,15 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <functional>
 #include <filesystem>
+#include <cstdint>
+#include "types.hpp"
 
-struct Value {
-private:
-	std::string value = "";
+#include <Eigen/Sparse>
+#include <Eigen/Core>
 
-	enum class SIGN {PLUS, MINUS} sign = SIGN::PLUS;
-	enum class TYPE {M_INT, M_DOUBLE} type = TYPE::M_DOUBLE;
-
-	double abs_value = 0; // absolute value
-public:
-
-	Value() = default;
-
-	Value(const std::string& str) {
-		*this = str;
-	}
-
-	Value& operator=(const std::string& str) {
-		value = str;
-		auto v = std::stod(str);
-		if (v >= 0) {
-			sign = SIGN::PLUS;
-			abs_value = static_cast<double>(v);
-		}
-		else if (v < 0) {
-			sign = SIGN::MINUS;
-			abs_value = static_cast<double>(-v);
-		}
-
-		auto t = v - static_cast<long int>(v);
-		if (t != 0) type = TYPE::M_DOUBLE;
-		else type = TYPE::M_INT;
-
-		return *this;
-
-	}
-
-	bool isPositive() const {
-		return sign == SIGN::PLUS ? true : false;
-	}
-
-	bool flipSign() {
-		if (sign == SIGN::PLUS) sign = SIGN::MINUS;
-		else sign = SIGN::PLUS;
-	}
-
-	double getValue() {
-		return isPositive()
-			? static_cast<double>(abs_value)
-			: -static_cast<double>(abs_value);
-	}
-};
-
-struct Entry {
-	int row;
-	int col;
-	Value value;
-};
 
 struct StringHash {
 	using is_transparent = void; // Enables heterogeneous lookup
@@ -104,13 +53,17 @@ public:
 public:
 	MPSParser(const std::filesystem::path& path);
 
-	int getRowCount() {
-		return _rowIndex;
-	}
-	int getColumnCount() {
-		return _columnIndex;
-	}
-	const std::vector<Entry>& getEntries() const& { return this->entries; }
+	std::size_t getRowCount() const noexcept { return _rowIndex; }
+	std::size_t getColumnCount() const noexcept { return _columnIndex; }
+	std::size_t getSlacksCount() const noexcept { return _slacksCount; }
+	std::size_t getArtificialsCount() const noexcept { return _artificialCount; }
+
+	Eigen::SparseVector<double> takeObjectiveRow() noexcept { return std::move(this->c); }
+	Eigen::SparseVector<double> takeRHSColumn() noexcept { return std::move(this->b); }
+	std::vector<Eigen::Triplet<double>> takeColumnEntries() noexcept { return std::move(this->columnSectionEntries); }
+	std::vector<Eigen::Triplet<double>> takeSlackEntries() noexcept { return std::move(this->slacks); }
+	std::vector<Eigen::Triplet<double>> takeArtificialEntries() noexcept { return std::move(this->artificials); }
+	std::vector<std::pair<std::size_t, std::size_t>> takeInitialBasisEntries() noexcept { return std::move(this->initialBasisEntries); }
 private:
 	std::string_view _firstWord(std::string_view line);
 	void _processLine(std::string_view line);
@@ -119,24 +72,66 @@ private:
 	void _catchColumn(std::string_view line);
 	MPSDATA_LINE _getSection(std::string_view line);
 	std::pair<MPSParser::CONSTRAINT_TYPE, std::string> _catchConstraint(std::string_view line);
+	void _catchRHS(std::string_view line);
 
+	void buildSlacks();
+	void buildArtificials();
+	void normalizeConstraintSigns();
+	void buildEigenSparseVectors();
+	void sortEntries();
 
 private:
-	int _columnIndex = 0;
-	int _rowIndex = 0;
+	std::size_t _columnIndex = 0;
+	std::size_t _rowIndex = 0;
+
+	std::size_t _slacksCount = 0;
+	// Aritficials column count
+	std::size_t _artificialCount = 0;
+
+	// Stores the number of constraints containing equality (=)
+	int _equalityConstraints = 0;
+	// Stores the number of constraints containing inequality less than (<=) or greather then (>=)
+	int _inequalityConstraints = 0;
+
 	MPSDATA_LINE curr_section = MPSDATA_LINE::VOID;
 
 
 	// Stores a particular row against that row's constraint type
 	std::unordered_map<std::string, CONSTRAINT_TYPE, StringHash, StringEqual> constraintMap;
 
+	// Stores a particular row indice against that row's constraint type
+	std::unordered_map<std::size_t, CONSTRAINT_TYPE> constraintMapRaw;
+
 	// Stores the rows against their index staring from 0;
-	std::unordered_map<std::string, int, StringHash, StringEqual> rowMap;
+	std::unordered_map<std::string, std::size_t, StringHash, StringEqual> rowMap;
 
 	// Stores the columns against their index staring from 0;
-	std::unordered_map<std::string, int, StringHash, StringEqual> columnMap;
+	std::unordered_map<std::string, std::size_t, StringHash, StringEqual> columnMap;
 
-	std::vector<Entry> entries;
+	// Stores the entries of the column section
+	std::vector<Eigen::Triplet<double>> columnSectionEntries;
+
+	// Stores the values of the objective row
+	std::vector<Eigen::Triplet<double>> objectiveRow;
+
+	// Stores the objective coefficients in Eigen::SparseVector from objectiveRow
+	Eigen::SparseVector<double> c;
+
+	// Stores the RHS values
+	std::vector<Eigen::Triplet<double>> rhsColumn;
+
+	// Stores the rhs values in Eigen::SparseVector from rhsColumn
+	Eigen::SparseVector<double> b;
+
+	// Stores the Slacks(Surplus)
+	std::vector<Eigen::Triplet<double>> slacks;
+
+	// Stores the Aritificials
+	std::vector<Eigen::Triplet<double>> artificials;
+
+	// Stores the initial basis columns
+	std::vector<std::pair<std::size_t, std::size_t>> initialBasisEntries;
+
 };
 
 

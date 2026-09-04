@@ -4,7 +4,7 @@ project(nomos VERSION 1.0)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(glm CONFIG REQUIRED)
+find_package(Eigen3 CONFIG REQUIRED)
 
 # find_package(GTest CONFIG REQUIRED)
 
