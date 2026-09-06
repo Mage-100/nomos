@@ -16,3 +16,17 @@ target_link_libraries(nomos PRIVATE Eigen3::Eigen)
 target_compile_definitions(nomos PRIVATE
     DATASET_DIR=\"${_DATASET_DIR}\"
 )
+
+target_compile_features(nomos PRIVATE
+    cxx_std_23
+)
+
+set_target_properties(nomos PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+target_compile_options(nomos PRIVATE
+    /W4
+)
