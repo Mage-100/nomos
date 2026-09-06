@@ -1,59 +1,63 @@
 #include <iostream>
 #include <filesystem>
 #include <print>
-
+#include <string_view>
 #include <Eigen/Sparse>
 
 #include "MPSParser.hpp"
-#include "BuildSolver.hpp"
+#include "LPSolverBuilder.hpp"
+#include "Utility.hpp"
 
 int main(int argc, char* argv[]) {
 	try {
-    const auto filePath = argc > 1
-        ? std::filesystem::path(argv[1])
-        : std::filesystem::path(DATASET_DIR) / "afiro.mps";
+        const auto filePath = argc > 1
+            ? std::filesystem::path(argv[1])
+            : datasetTypeToPath(DatasetType::Afiro);
 
-    MPSParser parser(filePath);
-    auto c           = parser.takeObjectiveRow();
-    auto b           = parser.takeRHSColumn();
-    auto entries     = parser.takeColumnEntries();
-    auto slacks      = parser.takeSlackEntries();
-    auto artificials = parser.takeArtificialEntries();
+        MPSParser parser(filePath);
+        auto objective =         parser.takeObjectiveRow();
+        auto rhs =               parser.takeRHSColumn();
+        auto constraintEntries = parser.takeColumnEntries();
+        auto slackEntries =      parser.takeSlackEntries();
+        auto artificialEntries = parser.takeArtificialEntries();
 
-    auto rowCount        = parser.getRowCount();
-    auto columnCount     = parser.getColumnCount();
-    auto slackCount      = parser.getSlacksCount();
-    auto artificialCount = parser.getArtificialsCount();
+        auto constraintCount =   parser.getRowCount();
+        auto variableCount =     parser.getColumnCount();
+        auto slackCount =        parser.getSlacksCount();
+        auto artificialCount =   parser.getArtificialsCount();
 
-    auto initialBasisEntries = parser.takeInitialBasisEntries();
 
-    std::println("Row Count: {}", rowCount);
-    std::println("Column Count: {}", columnCount);
-    std::println("RHS Count: {}", b.rows());
 
-    std::println("Slack/surplus columns: {}", slackCount);
-    std::println("Artificial columns: {}", artificialCount);
-    std::println("Initial basis entries: {}", initialBasisEntries.size());
+        auto initialBasisEntries = parser.takeInitialBasisEntries();
+        std::println("Constraints: {}", constraintCount);
+        std::println("Variables: {}", variableCount);
+        std::println("RHS entries: {}", rhs.rows());
 
-    BuildSolver builder = BuildSolver()
-        .setRows(rowCount)
-        .setColumns(columnCount)
-        .setSlackCount(slackCount)
-        .setArtificialCount(artificialCount)
-        .setObjectiveRow(std::move(c))
-        .setRHS(std::move(b))
-        .setColumnEntries(std::move(entries))
-        .setSlacks(std::move(slacks))
-        .setArtificials(std::move(artificials))
-        .setInitialBasisColumn(std::move(initialBasisEntries));
+        std::println("Slack/surplus variables: {}", slackCount);
+        std::println("Artificial variables: {}", artificialCount);
+        std::println("Initial basis entries: {}", initialBasisEntries.size());
 
-    auto solver = builder.build();
-    solver.solve();
-	}
-	catch (const std::exception& error) {
-		std::println(stderr, "Solver error: {}", error.what());
-		return 1;
-	}
+        LPSolverBuilder builder;
+        builder
+            .setConstraintCount(constraintCount)
+            .setVariableCount(variableCount)
+            .setSlackVariableCount(slackCount)
+            .setArtificialVariableCount(artificialCount)
+            .setObjective(std::move(objective))
+            .setRightHandSide(std::move(rhs))
+            .setConstraintMatrix(std::move(constraintEntries))
+            .setSlackEntries(std::move(slackEntries))
+            .setArtificialEntries(std::move(artificialEntries))
+            .setInitialBasis(std::move(initialBasisEntries));
+
+
+        auto solver = builder.build();
+        solver.solve();
+	 }
+	 catch (const std::exception& error) {
+	    std::println(stderr, "Solver error: {}", error.what());
+	    return 1;
+     }
 
 
     return 0;

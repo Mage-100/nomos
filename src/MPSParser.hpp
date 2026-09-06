@@ -33,6 +33,7 @@ struct StringEqual {
 
 class MPSParser {
 public:
+
 	// This enum class defines the MPS syntax into chunks
 	enum class MPSDATA_LINE : std::uint8_t {
 		VOID = 0,
@@ -131,7 +132,6 @@ private:
 
 	// Stores the initial basis columns
 	std::vector<std::pair<std::size_t, std::size_t>> initialBasisEntries;
-
 };
 
 

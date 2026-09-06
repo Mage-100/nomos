@@ -7,8 +7,9 @@ target_include_directories(nomos PUBLIC
 target_sources(nomos PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/MPSParser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LPSolver.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/BuildSolver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/LPSolverBuilder.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BasisFactorizationEngine.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Utility.cpp"
 )
 
 target_link_libraries(nomos PRIVATE Eigen3::Eigen)
