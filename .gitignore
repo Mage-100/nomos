@@ -13,3 +13,4 @@ __cmake_systeminformation
 
 #vcpkg
 vcpkg/
+vcpkg_installed/
