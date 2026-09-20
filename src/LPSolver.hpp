@@ -3,11 +3,13 @@
 #include <cstddef>
 #include <utility>
 #include <vector>
+#include <atomic>
 
 #include <Eigen/Sparse>
 
 #include "ESolverAlgorithm.hpp"
 #include "BasisFactorizationEngine.hpp"
+#include "SolverSolution.hpp"
 
 template <typename T>
 class LPSolver {
@@ -32,20 +34,31 @@ public:
 
     void solve();
 
+    const SolverSolution<T>& getSolution() const noexcept { return solution_; };
+
+    bool isSolveDone() const noexcept { return isSolveDone_.load(std::memory_order_relaxed); }
+    double getSolverProgress() const noexcept { return progress_.load(std::memory_order_relaxed); }
+
 private:
     void buildConstraintCoefficientMatrix();
     void removeArtificialBasics();
 
-    void solveSimplex(T& objectiveValue, const SparseVector& objectiveCoefficients, std::size_t enteringColumnCount, bool printSolution);
-    T extractSolution(const SparseVector& objectiveCoefficients, bool printSolution);
+    void solveSimplex(T& objectiveValue, const SparseVector& objectiveCoefficients, std::size_t enteringColumnCount, std::size_t& iterationCount);
+    const SolverSolution<T>& extractSolution() const;
 
     std::size_t totalColumnCount() const noexcept;
+
+    std::size_t phaseOneIterationCount_{ 0 };
+    std::size_t phaseTwoIterationCount_{ 0 };
 
     std::size_t constraintCount_{ 0 };
     std::size_t decisionVariableCount_{ 0 };
 
     std::size_t slackVariableCount_{ 0 };
     std::size_t artificialVariableCount_{ 0 };
+
+    std::atomic<bool> isSolveDone_{ false };
+    std::atomic<double> progress_{ 0.0f };
 
     SolverAlgorithm algorithm_ =
         SolverAlgorithm::LP_REVISED_SIMPLEX;
@@ -74,6 +87,9 @@ private:
 
     // Basis factorization engine.
     BFE<T> basisFactorization_;
+
+    // Solution Struct
+    mutable SolverSolution<T> solution_;
 };
 
 #include <algorithm>
@@ -123,9 +139,10 @@ LPSolver<T>::LPSolver(
     );
 }
 
-    template <typename T>
-    void LPSolver<T>::solve()
-    {
+template <typename T>
+void LPSolver<T>::solve()
+{
+    try {
         constexpr T tolerance = static_cast<T>(1e-8);
 
         const std::size_t nonArtificialColumnCount =
@@ -153,7 +170,7 @@ LPSolver<T>::LPSolver(
                 phaseOneObjectiveValue,
                 phaseOneObjective,
                 totalColumnCount(),
-                false
+                phaseOneIterationCount_
             );
 
             if (phaseOneObjectiveValue > tolerance)
@@ -173,9 +190,19 @@ LPSolver<T>::LPSolver(
             objectiveValue,
             objectiveCoefficients_,
             nonArtificialColumnCount,
-            true
+            phaseTwoIterationCount_
         );
+        extractSolution();
+        progress_.store(1.0f, std::memory_order_release);
+        isSolveDone_.store(true, std::memory_order_release);
     }
+    catch(const std::exception& error)
+    {
+	    std::println(stderr, "Solver error: {}", error.what());
+        isSolveDone_.store(true, std::memory_order_release);
+        std::exit(1);
+    }
+}
 
 template <typename T>
 void LPSolver<T>::buildConstraintCoefficientMatrix()
@@ -344,13 +371,11 @@ void LPSolver<T>::solveSimplex(
     T& objectiveValue,
     const SparseVector& objectiveCoefficients,
     std::size_t enteringColumnCount,
-    bool printSolution
+    std::size_t& iterationCount
 )
 {
     constexpr T tolerance = static_cast<T>(1e-9);
     constexpr std::size_t maximumIterations = 100'000;
-
-    std::size_t iterations = 0;
 
     while (true)
     {
@@ -507,23 +532,28 @@ void LPSolver<T>::solveSimplex(
         // Refactorize the updated basis.
         basisFactorization_.factorize();
 
-        ++iterations;
+        ++iterationCount;
 
         // Print progress.
-        if (iterations % 100 == 0)
+        //if (iterationCount % 100 == 0)
+        if (true)
         {
-            const double percentage =
-                100.0 * static_cast<double>(iterations) /
+            const double progress =
+                static_cast<double>(iterationCount) /
                 static_cast<double>(maximumIterations);
 
-            std::print(
-                "\rProgress: {:6.2f}%",
-                percentage
-            );
+            //const double percentage = 100.0 * progress;
+
+            //std::print(
+            //    "\rProgress: {:6.2f}%",
+            //    percentage
+            //);
+
+            progress_.store(progress, std::memory_order_release);
         }
 
         // Stop if the iteration limit is reached.
-        if (iterations >= maximumIterations)
+        if (iterationCount >= maximumIterations)
         {
             std::println();
 
@@ -534,19 +564,16 @@ void LPSolver<T>::solveSimplex(
 
     }
 
-    std::println("Iterations took: {}", iterations);
-
-    // Extract the final solution.
-    objectiveValue = extractSolution(objectiveCoefficients, printSolution);
+    //std::println("Iterations took: {}", iterationCount);
 }
 
 template<typename T>
-inline T LPSolver<T>::extractSolution(const SparseVector& objectiveCoefficients, bool printSolution)
+inline const SolverSolution<T>& LPSolver<T>::extractSolution() const
 {
 
     const auto& basisColumnIndices = basisFactorization_.getBasisColumnIndices();
 
-    auto& basisLU = basisFactorization_.getBasisLU();
+    const auto& basisLU = basisFactorization_.getBasisLU();
 
     const Eigen::VectorX<T> basicSolution = basisLU.solve(Eigen::VectorX<T>(rhs_));
 
@@ -563,31 +590,39 @@ inline T LPSolver<T>::extractSolution(const SparseVector& objectiveCoefficients,
         );
     }
 
-    const T objectiveValue =
-        objectiveCoefficients.dot(solution);
+    //const T objectiveValue =
+    //    objectiveCoefficients_.dot(solution);
+    solution_.algo = algorithm_;
+    solution_.objectiveValue = objectiveCoefficients_.dot(solution);
+    solution_.type = ProblemType::LP;
 
-    if (printSolution)
+    solution_.variables.resize(decisionVariableCount_);
+
+    for (std::size_t i = 0; i < decisionVariableCount_; ++i)
     {
-        std::println("\nOptimal Solution:");
-
-        for (std::size_t i = 0;
-            i < decisionVariableCount_;
-            ++i)
-        {
-            std::println(
-                " x[{}] = {:.6f}",
-                i + 1,
-                solution(
-                    static_cast<Eigen::Index>(i)
-                )
-            );
-        }
-
-        std::println(
-            "\nObjective value: {:.15f}",
-            objectiveValue
-        );
+        solution_.variables[i] =
+            solution(static_cast<Eigen::Index>(i));
     }
 
-    return objectiveValue;
+	//std::println("\nOptimal Solution:");
+
+	//for (std::size_t i = 0;
+	//	i < decisionVariableCount_;
+	//	++i)
+	//{
+	//	std::println(
+	//		" x[{}] = {:.6f}",
+	//		i + 1,
+	//		solution(
+	//			static_cast<Eigen::Index>(i)
+	//		)
+	//	);
+	//}
+
+	//std::println(
+	//	"\nObjective value: {:.15f}",
+	//	objectiveValue
+	//);
+
+    return solution_;
 }

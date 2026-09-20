@@ -21,6 +21,7 @@ public:
     void factorize();
 
     SparseLU& getBasisLU() noexcept { return basisLU_;}
+    const SparseLU& getBasisLU() const noexcept { return basisLU_;}
 
     const std::vector<std::size_t>& getBasisColumnIndices() const noexcept { return basisColumnIndices_; }
 

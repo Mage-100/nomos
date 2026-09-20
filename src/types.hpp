@@ -18,3 +18,7 @@ enum class DatasetType
     Bnl1,
     Bnl2,
 };
+
+enum class ProblemType : std::uint8_t {
+    LP // Linear Programming
+};

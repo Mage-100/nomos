@@ -12,7 +12,7 @@ target_sources(nomos PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Utility.cpp"
 )
 
-target_link_libraries(nomos PRIVATE Eigen3::Eigen)
+target_link_libraries(nomos PRIVATE Eigen3::Eigen ftxui::ftxui)
 
 target_compile_definitions(nomos PRIVATE
     DATASET_DIR=\"${_DATASET_DIR}\"
